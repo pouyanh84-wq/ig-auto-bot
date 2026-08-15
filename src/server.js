@@ -89,6 +89,11 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Railway health check
+app.get('/healthz', (req, res) => {
+  res.status(200).send('OK');
+});
+
 // صفحه اصلی
 app.get('/', (req, res) => {
   res.json({
