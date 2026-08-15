@@ -137,15 +137,16 @@ async function start() {
     await db.initializeDatabase();
 
     // راه‌اندازی سرور
-    app.listen(config.port, () => {
+    const port = process.env.PORT || config.port;
+    app.listen(port, '0.0.0.0', () => {
       console.log('');
       console.log('🤖 ============================================');
       console.log('🤖  Instagram Auto Bot - سرور فعال شد!');
       console.log('🤖 ============================================');
-      console.log(`🌐 آدرس: http://localhost:${config.port}`);
-      console.log(`📡 Webhook: http://localhost:${config.port}/webhook`);
-      console.log(`🔗 اتصال: http://localhost:${config.port}/auth/connect?user_id=YOUR_ID`);
-      console.log(`📊 داشبورد: http://localhost:${config.port}/api/dashboard?user_id=YOUR_ID`);
+      console.log(`🌐 آدرس: http://0.0.0.0:${port}`);
+      console.log(`📡 Webhook: http://0.0.0.0:${port}/webhook`);
+      console.log(`🔗 اتصال: http://0.0.0.0:${port}/auth/connect?user_id=YOUR_ID`);
+      console.log(`📊 داشبورد: http://0.0.0.0:${port}/api/dashboard?user_id=YOUR_ID`);
       console.log('🤖 ============================================');
       console.log('');
     });
