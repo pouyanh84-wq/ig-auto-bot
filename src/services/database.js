@@ -9,6 +9,9 @@ function getPool() {
   if (!pool) {
     pool = new Pool({
       connectionString: config.database.url,
+      ssl: {
+        rejectUnauthorized: false // برای Supabase Pooler
+      },
       max: 20,
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: 5000
