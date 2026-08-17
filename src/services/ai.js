@@ -1,103 +1,121 @@
-// src/services/ai.js - Smart AI (Chatwoot Webhook Compatible)
-const OpenAI = require('openai');
-const config = require('../config');
-const db = require('./database');
+// src/services/ai.js - Hugging Face Free AI
+const axios = require('axios');
 
-const openai = new OpenAI({ apiKey: config.openai.apiKey });
+const HF_API_KEY = process.env.HUGGINGFACE_API_KEY || process.env.AI_PROVIDER === 'huggingface';
 
-const SYSTEM_PROMPT = `تو یک ادمین فروش حرفه‌ای و دستیار هوشمند برای خدمات طراحی وبسایت Pouyan.com هستی.
+// ========================================
+// SYSTEM PROMPT - دانش کسب‌وکار
+// ========================================
+const SYSTEM_PROMPT = `تو یک ادمین فروش حرفه‌ای برای خدمات طراحی وبسایت Pouyan.com هستی.
 
---- اطلاعات کسب‌وکار ---
+اطلاعات کسب‌وکار:
 نام: Pouyan.com
 حوزه: طراحی وبسایت اختصاصی
-وبسایت: pouyan.com
 شماره تماس: ۰۹۱۲۱۲۳۴۵۶۷
-ساعات کاری: ۹ صبح تا ۹ شب
 
---- خدمات ---
+خدمات:
 - طراحی وبسایت اختصاصی (بدون قالب آماده)
-- نسخه موبایل حرفه‌ای و روان
-- اتصال درگاه پرداخت و سفارش‌گیری اتوماتیک
-- پیاده‌سازی سئو پایه
-- آموزش کامل مدیریت سایت
+- نسخه موبایل حرفه‌ای
+- اتصال درگاه پرداخت
+- سئو پایه
 
---- پلن‌ها و تعرفه‌ها ---
-💎 پلن ۱: تحویل قطعی (مالکیت کامل)
-   قیمت: ۱۷.۹ میلیون تومان
-   پرداخت: ۵۰٪ پیش‌پرداخت + ۵۰٪ زمان تحویل
-   پشتیبانی: ۳ ماه رایگان
-   مناسب: کسب‌وکارهایی که می‌خوان سایت از روز اول مال خودشون باشه
+پلن‌ها:
+💎 پلن ۱: ۱۷.۹ میلیون تومان (تحویل قطعی)
+🤝 پلن ۲: ۹.۹ میلیون پیش + ۷٪ فروش (۶ ماه)
+🚀 پلن ۳: ۰ تومان + ۱۷٪ فروش (۶ ماه، حداقل فروش ۲۰ میلیون)
 
-🤝 پلن ۲: مدل ترکیبی (رشد مشترک)
-   پیش‌پرداخت: ۹.۹ میلیون تومان
-   سهم مشارکت: ۷٪ از فروش سایت
-   مدت قرارداد: ۶ ماه
-   مناسب: کسب‌وکارهایی که هزینه اولیه کمتر بدن و من در رشد فروش شریک باشم
+تماس: ۰۹۱۲۱۲۳۴۵۶۷
 
-🚀 پلن ۳: مشارکتی کامل (بدون هزینه اولیه)
-   پیش‌پرداخت: ۰ تومان (رایگان)
-   سهم مشارکت: ۱۷٪ از فروش سایت
-   مدت قرارداد: ۶ ماه
-   شرط: حداقل فروش ماهانه ۲۰ میلیون تومان
-   مناسب: کسب‌وکارهای پرفروش
-
---- قوانین همکاری ---
-۱. دامنه به نام خود کارفرما ثبت می‌شود
-۲. طراح فقط زیرساخت فنی ارائه می‌دهد
-۳. در مدل‌های درصدی، تسویه ماهانه انجام می‌شود
-۴. قرارداد رسمی الکترونیکی تنظیم می‌شود
-
---- قوانین مکالمه ---
-- همیشه مودب و حرفه‌ای باش
-- به فارسی ساده و روان جواب بده
-- کوتاه و مفید حرف بزن (هر پیام حداکثر ۴-۵ خط)
-- اگر مشتری قصد خرید داشت، قدم‌به‌قدم اطلاعات لازم رو جمع کن (نام، شماره، پلن انتخابی)
-- هیچ‌وقت اطلاعات جعلی یا قیمت اشتباه نده
-- اگر سوالی خارج از حوزه بود، بگو: بذار از مسئول مربوطه بپرسم
-- از ایموجی استفاده کن ولی زیاده‌روی نکن
-- هرگز قیمت‌ها رو تغییر نده
+قوانین:
+- به فارسی جواب بده
+- کوتاه و مفید باش
+- مودب و حرفه‌ای باش
+- اگه مشتری خواست سفارش بده، اطلاعاتش رو جمع کن
 `;
 
-// ============================================
-// تولید پاسخ هوشمند (سازگار با webhook.js)
-// ============================================
+// ========================================
+// Hugging Face Inference API (رایگان)
+// ========================================
+const HF_MODEL = 'mistralai/Mistral-7B-Instruct-v0.3';
+
 async function generateResponse({ message, customerName, products, conversationHistory, context, botConfig }) {
   try {
-    // تاریخچه مکالمه از آرگومان
-    const history = Array.isArray(conversationHistory) ? conversationHistory : [];
+    const apiKey = process.env.HUGGINGFACE_API_KEY;
+    
+    if (!apiKey) {
+      throw new Error('HUGGINGFACE_API_KEY تعریف نشده');
+    }
 
-    // پیام‌ها برای OpenAI
-    const messages = [
-      { role: 'system', content: SYSTEM_PROMPT },
-      ...history,
-      { role: 'user', content: message }
-    ];
+    // ساخت prompt
+    let fullPrompt = `<s>[INST] ${SYSTEM_PROMPT}
 
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: messages,
-      temperature: 0.7,
-      max_tokens: 500
-    });
+مشتری می‌گوید: ${message}
 
-    const reply = response.choices[0].message.content;
+تو: [/INST]`;
+
+    // اگه تاریخچه مکالمه داریم
+    if (conversationHistory && conversationHistory.length > 0) {
+      const historyText = conversationHistory.map(m => 
+        `${m.role === 'user' ? 'مشتری' : 'تو'}: ${m.content}`
+      ).join('\n');
+      
+      fullPrompt = `<s>[INST] ${SYSTEM_PROMPT}
+
+تاریخچه مکالمه:
+${historyText}
+
+مشتری می‌گوید: ${message}
+
+تو: [/INST]`;
+    }
+
+    const response = await axios.post(
+      `https://api-inference.huggingface.co/models/${HF_MODEL}`,
+      {
+        inputs: fullPrompt,
+        parameters: {
+          max_new_tokens: 500,
+          temperature: 0.7,
+          top_p: 0.95,
+          repetition_penalty: 1.1,
+          do_sample: true
+        }
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        timeout: 30000
+      }
+    );
+
+    // استخراج پاسخ
+    let reply = '';
+    if (response.data && Array.isArray(response.data)) {
+      reply = response.data[0]?.generated_text || '';
+    } else if (response.data && response.data.generated_text) {
+      reply = response.data.generated_text;
+    }
+
+    // تمیز کردن پاسخ
+    reply = reply.replace(/<s>\[INST\]|<\/s>|\/INST/g, '').trim();
+    
+    // اگه پاسخ خالی بود
+    if (!reply) {
+      reply = 'متأسفانه مشکلی پیش اومد. لطفاً دوباره امتحان کنید. 🙏';
+    }
 
     // تشخیص قصد خرید
     let intent = 'general';
     if (reply.includes('سفارش') || reply.includes('ثبت') || reply.includes('خرید')) {
       intent = 'order';
-    } else if (reply.includes('پشتیبانی') || reply.includes('ادمین')) {
-      intent = 'handoff';
     }
 
-    // برگرداندن به شکلی که webhook.js می‌خواد
-    return {
-      text: reply,
-      intent: intent
-    };
+    return { text: reply, intent };
 
-  } catch (err) {
-    console.error('خطا در OpenAI:', err.message);
+  } catch (error) {
+    console.error('خطا در Hugging Face:', error.message);
     return {
       text: 'متأسفانه مشکلی پیش اومد. لطفاً دوباره امتحان کنید. 🙏',
       intent: 'error'
@@ -105,27 +123,49 @@ async function generateResponse({ message, customerName, products, conversationH
   }
 }
 
-// ============================================
-// پاسخ به کامنت (مخصوص Instagram)
-// ============================================
+// ========================================
+// پاسخ به کامنت
+// ========================================
 async function generateCommentReply(commentText, products) {
   try {
-    const productList = (products || []).map(p => `${p.name}: ${p.price} تومان`).join('\n');
+    const apiKey = process.env.HUGGINGFACE_API_KEY;
+    
+    if (!apiKey) {
+      return { text: 'ممنون از پیامتون! 🙏' };
+    }
 
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: `کامنت مشتری: ${commentText}\n\nلیست محصولات:\n${productList}\n\nپاسخ کوتاه و حرفه‌ای بده.` }
-      ],
-      temperature: 0.7,
-      max_tokens: 200
-    });
+    const response = await axios.post(
+      `https://api-inference.huggingface.co/models/${HF_MODEL}`,
+      {
+        inputs: `<s>[INST] ${SYSTEM_PROMPT}
 
-    return { text: response.choices[0].message.content };
+کامنت مشتری: ${commentText}
+
+پاسخ کوتاه و حرفه‌ای بده: [/INST]`,
+        parameters: {
+          max_new_tokens: 200,
+          temperature: 0.7
+        }
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        timeout: 30000
+      }
+    );
+
+    let reply = '';
+    if (response.data && Array.isArray(response.data)) {
+      reply = response.data[0]?.generated_text || '';
+    }
+    reply = reply.replace(/<s>\[INST\]|<\/s>|\/INST/g, '').trim();
+
+    return { text: reply || 'ممنون از پیامتون! 🙏' };
 
   } catch (err) {
-    console.error('خطا در OpenAI (comment):', err.message);
+    console.error('خطا در Hugging Face (comment):', err.message);
     return { text: 'ممنون از پیامتون! 🙏' };
   }
 }
