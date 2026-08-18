@@ -1,4 +1,4 @@
-// src/services/ai.js - Free AI (Hugging Face + Fallback)
+// src/services/ai.js - Groq Free AI + Fallback
 const axios = require('axios');
 
 const SYSTEM_PROMPT = `تو یک ادمین فروش حرفه‌ای برای خدمات طراحی وبسایت Pouyan.com هستی.
@@ -29,17 +29,86 @@ const SYSTEM_PROMPT = `تو یک ادمین فروش حرفه‌ای برای خ
 `;
 
 // ========================================
-// روش ۱: Hugging Face (رایگان)
+// روش ۱: Groq (رایگان - ۳۰ درخواست/دقیقه)
+// ========================================
+async function tryGroq(fullPrompt) {
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey || apiKey === 'placeholder') return null;
+
+  try {
+    const response = await axios.post(
+      'https://api.groq.com/openai/v1/chat/completions',
+      {
+        model: 'llama3-8b-8192',
+        messages: [
+          { role: 'system', content: SYSTEM_PROMPT },
+          { role: 'user', content: fullPrompt }
+        ],
+        temperature: 0.7,
+        max_tokens: 500
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        timeout: 30000
+      }
+    );
+
+    return response.data?.choices?.[0]?.message?.content;
+  } catch (e) {
+    console.log(`❌ Groq کار نکرد: ${e.message}`);
+    return null;
+  }
+}
+
+// ========================================
+// روش ۲: Together AI (رایگان - ۵ دلار اعتبار)
+// ========================================
+async function tryTogether(fullPrompt) {
+  const apiKey = process.env.TOGETHER_API_KEY;
+  if (!apiKey || apiKey === 'placeholder') return null;
+
+  try {
+    const response = await axios.post(
+      'https://api.together.xyz/v1/chat/completions',
+      {
+        model: 'meta-llama/Meta-Llama-3-8B-Instruct-Turbo',
+        messages: [
+          { role: 'system', content: SYSTEM_PROMPT },
+          { role: 'user', content: fullPrompt }
+        ],
+        temperature: 0.7,
+        max_tokens: 500
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        timeout: 30000
+      }
+    );
+
+    return response.data?.choices?.[0]?.message?.content;
+  } catch (e) {
+    console.log(`❌ Together کار نکرد: ${e.message}`);
+    return null;
+  }
+}
+
+// ========================================
+// روش ۳: Hugging Face (رایگان)
 // ========================================
 async function tryHuggingFace(fullPrompt) {
   const apiKey = process.env.HUGGINGFACE_API_KEY;
-  if (!apiKey) return null;
+  if (!apiKey || apiKey === 'placeholder') return null;
 
   const models = [
     'mistralai/Mistral-7B-Instruct-v0.3',
     'HuggingFaceH4/zephyr-7b-beta',
-    'google/gemma-2-2b-it',
-    'microsoft/Phi-3-mini-4k-instruct'
+    'google/gemma-2-2b-it'
   ];
 
   for (const model of models) {
@@ -86,65 +155,7 @@ async function tryHuggingFace(fullPrompt) {
 }
 
 // ========================================
-// روش ۲: OpenAI (اگه API Key داشته باشی)
-// ========================================
-async function tryOpenAI(fullPrompt) {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey || apiKey === 'placeholder') return null;
-
-  try {
-    const { default: OpenAI } = await import('openai');
-    const openai = new OpenAI({ apiKey });
-    
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
-      messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: fullPrompt }
-      ],
-      temperature: 0.7,
-      max_tokens: 500
-    });
-
-    return response.choices[0]?.message?.content;
-  } catch (e) {
-    console.log(`❌ OpenAI کار نکرد: ${e.message}`);
-    return null;
-  }
-}
-
-// ========================================
-// روش ۳: DuckDuckGo AI (کاملاً رایگان)
-// ========================================
-async function tryDuckDuckGo(fullPrompt) {
-  try {
-    const response = await axios.post(
-      'https://duckduckgo.com/duckchat/v1/chat',
-      {
-        model: 'gpt-4o-mini',
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: fullPrompt }
-        ]
-      },
-      {
-        headers: {
-          'Content-Type': 'application/json',
-          'User-Agent': 'Mozilla/5.0'
-        },
-        timeout: 30000
-      }
-    );
-
-    return response.data?.message?.content;
-  } catch (e) {
-    console.log(`❌ DuckDuckGo کار نکرد: ${e.message}`);
-    return null;
-  }
-}
-
-// ========================================
-// روش ۴: پاسخ پیش‌فرض هوشمند
+// روش ۴: پاسخ هوشمند پیش‌فرض
 // ========================================
 function getSmartFallback(userMessage) {
   const msg = userMessage.toLowerCase();
@@ -179,25 +190,25 @@ async function generateResponse({ message, customerName, products, conversationH
 
 تو باید به فارسی پاسخ بدی.`;
 
-  // روش ۱: Hugging Face
-  let reply = await tryHuggingFace(fullPrompt);
+  // روش ۱: Groq (رایگان + سریع)
+  let reply = await tryGroq(fullPrompt);
   if (reply) {
     return { text: reply, intent: 'general' };
   }
 
-  // روش ۲: OpenAI
-  reply = await tryOpenAI(fullPrompt);
+  // روش ۲: Together AI (رایگان)
+  reply = await tryTogether(fullPrompt);
   if (reply) {
     return { text: reply, intent: 'general' };
   }
 
-  // روش ۳: DuckDuckGo
-  reply = await tryDuckDuckGo(fullPrompt);
+  // روش ۳: Hugging Face (رایگان)
+  reply = await tryHuggingFace(fullPrompt);
   if (reply) {
     return { text: reply, intent: 'general' };
   }
 
-  // روش ۴: پاسخ پیش‌فرض هوشمند
+  // روش ۴: پاسخ هوشمند پیش‌فرض
   console.log('⚠️ هیچ AI کار نکرد، از پاسخ پیش‌فرض استفاده شد');
   return {
     text: getSmartFallback(message),
