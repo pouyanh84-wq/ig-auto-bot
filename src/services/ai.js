@@ -1,4 +1,4 @@
-// src/services/ai.js - Groq Free AI + Fallback
+// src/services/ai.js - Groq Free AI (v2 - Fixed Model Names)
 const axios = require('axios');
 
 const SYSTEM_PROMPT = `تو یک ادمین فروش حرفه‌ای برای خدمات طراحی وبسایت Pouyan.com هستی.
@@ -29,101 +29,37 @@ const SYSTEM_PROMPT = `تو یک ادمین فروش حرفه‌ای برای خ
 `;
 
 // ========================================
-// روش ۱: Groq (رایگان - ۳۰ درخواست/دقیقه)
+// Groq (رایگان - ۳۰ درخواست/دقیقه)
 // ========================================
 async function tryGroq(fullPrompt) {
   const apiKey = process.env.GROQ_API_KEY;
-  if (!apiKey || apiKey === 'placeholder') return null;
-
-  try {
-    const response = await axios.post(
-      'https://api.groq.com/openai/v1/chat/completions',
-      {
-        model: 'llama3-8b-8192',
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: fullPrompt }
-        ],
-        temperature: 0.7,
-        max_tokens: 500
-      },
-      {
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json'
-        },
-        timeout: 30000
-      }
-    );
-
-    return response.data?.choices?.[0]?.message?.content;
-  } catch (e) {
-    console.log(`❌ Groq کار نکرد: ${e.message}`);
+  if (!apiKey || apiKey === 'placeholder' || !apiKey.startsWith('gsk_')) {
+    console.log('⚠️ GROQ_API_KEY تنظیم نشده یا اشتباهه');
     return null;
   }
-}
 
-// ========================================
-// روش ۲: Together AI (رایگان - ۵ دلار اعتبار)
-// ========================================
-async function tryTogether(fullPrompt) {
-  const apiKey = process.env.TOGETHER_API_KEY;
-  if (!apiKey || apiKey === 'placeholder') return null;
-
-  try {
-    const response = await axios.post(
-      'https://api.together.xyz/v1/chat/completions',
-      {
-        model: 'meta-llama/Meta-Llama-3-8B-Instruct-Turbo',
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: fullPrompt }
-        ],
-        temperature: 0.7,
-        max_tokens: 500
-      },
-      {
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json'
-        },
-        timeout: 30000
-      }
-    );
-
-    return response.data?.choices?.[0]?.message?.content;
-  } catch (e) {
-    console.log(`❌ Together کار نکرد: ${e.message}`);
-    return null;
-  }
-}
-
-// ========================================
-// روش ۳: Hugging Face (رایگان)
-// ========================================
-async function tryHuggingFace(fullPrompt) {
-  const apiKey = process.env.HUGGINGFACE_API_KEY;
-  if (!apiKey || apiKey === 'placeholder') return null;
-
+  // مدل‌های مختلف Groq
   const models = [
-    'mistralai/Mistral-7B-Instruct-v0.3',
-    'HuggingFaceH4/zephyr-7b-beta',
-    'google/gemma-2-2b-it'
+    'llama-3.3-70b-versatile',
+    'llama-3.1-8b-instant',
+    'llama3-70b-8192',
+    'llama3-8b-8192',
+    'mixtral-8x7b-32768',
+    'gemma-7b-it'
   ];
 
   for (const model of models) {
     try {
       const response = await axios.post(
-        `https://api-inference.huggingface.co/models/${model}`,
+        'https://api.groq.com/openai/v1/chat/completions',
         {
-          inputs: fullPrompt,
-          parameters: {
-            max_new_tokens: 500,
-            temperature: 0.7,
-            top_p: 0.95,
-            repetition_penalty: 1.1,
-            do_sample: true
-          }
+          model: model,
+          messages: [
+            { role: 'system', content: SYSTEM_PROMPT },
+            { role: 'user', content: fullPrompt }
+          ],
+          temperature: 0.7,
+          max_tokens: 500
         },
         {
           headers: {
@@ -134,20 +70,13 @@ async function tryHuggingFace(fullPrompt) {
         }
       );
 
-      let reply = '';
-      if (Array.isArray(response.data)) {
-        reply = response.data[0]?.generated_text || '';
-      } else if (response.data?.generated_text) {
-        reply = response.data.generated_text;
-      }
-
-      reply = reply.replace(/<s>\[INST\]|<\/s>|\/INST/g, '').trim();
+      const reply = response.data?.choices?.[0]?.message?.content;
       if (reply && reply.length > 5) {
-        console.log(`✅ Hugging Face مدل ${model} کار کرد`);
+        console.log(`✅ Groq مدل ${model} کار کرد`);
         return reply;
       }
     } catch (e) {
-      console.log(`❌ مدل ${model} کار نکرد: ${e.message}`);
+      console.log(`❌ Groq مدل ${model}: ${e.response?.data?.error?.message || e.message}`);
       continue;
     }
   }
@@ -155,21 +84,21 @@ async function tryHuggingFace(fullPrompt) {
 }
 
 // ========================================
-// روش ۴: پاسخ هوشمند پیش‌فرض
+// پاسخ هوشمند پیش‌فرض
 // ========================================
 function getSmartFallback(userMessage) {
   const msg = userMessage.toLowerCase();
   
-  if (msg.includes('سلام') || msg.includes('خوبی') || msg.includes('خوشی')) {
+  if (msg.includes('سلام') || msg.includes('خوبی') || msg.includes('خوشی') || msg.includes('قربان')) {
     return 'سلام! 👋 خوش اومدید. من دستیار Pouyan.com هستم. چطور می‌تونم کمکتون کنم؟';
   }
-  if (msg.includes('قیمت') || msg.includes('تعرفه') || msg.includes('هزینه')) {
+  if (msg.includes('قیمت') || msg.includes('تعرفه') || msg.includes('هزینه') || msg.includes('چنده')) {
     return '💰 تعرفه‌های ما:\n💎 پلن ۱: ۱۷.۹ میلیون تومان\n🤝 پلن ۲: ۹.۹ میلیون + ۷٪ فروش\n🚀 پلن ۳: رایگان + ۱۷٪ فروش\n\nکدوم پلن براتون مناسب‌تره؟';
   }
   if (msg.includes('پلن') || msg.includes('توضیح')) {
     return '📋 پلن‌های ما:\n💎 پلن ۱: تحویل قطعی (مالکیت کامل)\n🤝 پلن ۲: مشارکتی (رشد مشترک)\n🚀 پلن ۳: بدون پیش‌پرداخت\n\nهر کدوم رو توضیح بدم؟';
   }
-  if (msg.includes('سفارش') || msg.includes('ثبت') || msg.includes('شروع')) {
+  if (msg.includes('سفارش') || msg.includes('ثبت') || msg.includes('شروع') || msg.includes('می‌خوام')) {
     return '🛒 عالیه! برای ثبت سفارش لطفاً این اطلاعات رو بفرستید:\n۱. نام و نام خانوادگی\n۲. شماره تماس\n۳. نام کسب‌وکار\n۴. پلن مورد نظر';
   }
   if (msg.includes('تماس') || msg.includes('تلفن') || msg.includes('شماره')) {
@@ -177,6 +106,9 @@ function getSmartFallback(userMessage) {
   }
   if (msg.includes('ممنون') || msg.includes('تشکر')) {
     return 'خواهش می‌کنم! 🙏 خوشحالم که تونستم کمکتون کنم.';
+  }
+  if (msg.includes('بله') || msg.includes('آره') || msg.includes('درسته')) {
+    return 'عالیه! ✅ لطفاً اطلاعاتت رو بفرست تا ثبت کنم.';
   }
   
   return 'سلام! 👋 من دستیار هوشمند Pouyan.com هستم.\n\n🔹 قیمت طراحی سایت\n🔹 مشاهده پلن‌ها\n🔹 ثبت سفارش\n🔹 تماس با ما\n\nچطور می‌تونم کمکتون کنم؟';
@@ -196,20 +128,8 @@ async function generateResponse({ message, customerName, products, conversationH
     return { text: reply, intent: 'general' };
   }
 
-  // روش ۲: Together AI (رایگان)
-  reply = await tryTogether(fullPrompt);
-  if (reply) {
-    return { text: reply, intent: 'general' };
-  }
-
-  // روش ۳: Hugging Face (رایگان)
-  reply = await tryHuggingFace(fullPrompt);
-  if (reply) {
-    return { text: reply, intent: 'general' };
-  }
-
-  // روش ۴: پاسخ هوشمند پیش‌فرض
-  console.log('⚠️ هیچ AI کار نکرد، از پاسخ پیش‌فرض استفاده شد');
+  // روش ۲: پاسخ هوشمند پیش‌فرض
+  console.log('⚠️ Groq کار نکرد، از پاسخ پیش‌فرض استفاده شد');
   return {
     text: getSmartFallback(message),
     intent: 'fallback'
