@@ -1,4 +1,4 @@
-// src/services/ai.js - Groq Free AI (v2 - Fixed Model Names)
+// src/services/ai.js - Free AI (Groq New Models + Smart Fallback)
 const axios = require('axios');
 
 const SYSTEM_PROMPT = `تو یک ادمین فروش حرفه‌ای برای خدمات طراحی وبسایت Pouyan.com هستی.
@@ -29,23 +29,25 @@ const SYSTEM_PROMPT = `تو یک ادمین فروش حرفه‌ای برای خ
 `;
 
 // ========================================
-// Groq (رایگان - ۳۰ درخواست/دقیقه)
+// Groq - مدل‌های جدید ۲۰۲۶
 // ========================================
 async function tryGroq(fullPrompt) {
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey || apiKey === 'placeholder' || !apiKey.startsWith('gsk_')) {
-    console.log('⚠️ GROQ_API_KEY تنظیم نشده یا اشتباهه');
     return null;
   }
 
-  // مدل‌های مختلف Groq
+  // مدل‌های جدید و فعلی Groq (۲۰۲۶)
   const models = [
-    'llama-3.3-70b-versatile',
-    'llama-3.1-8b-instant',
-    'llama3-70b-8192',
-    'llama3-8b-8192',
-    'mixtral-8x7b-32768',
-    'gemma-7b-it'
+    'openai/gpt-oss-20b',
+    'openai/gpt-oss-120b',
+    'groq/compound-mini',
+    'groq/compound',
+    'qwen/qwen3.6-27b',
+    'meta-llama/llama-4-scout-17b-16e-instruct',
+    'meta-llama/llama-4-maverick-17b-128e-instruct',
+    'deepseek-r1-distill-llama-70b',
+    'meta-llama/llama-4-scout-17b-16e-instruct'
   ];
 
   for (const model of models) {
@@ -76,7 +78,8 @@ async function tryGroq(fullPrompt) {
         return reply;
       }
     } catch (e) {
-      console.log(`❌ Groq مدل ${model}: ${e.response?.data?.error?.message || e.message}`);
+      const errMsg = e.response?.data?.error?.message || e.message;
+      console.log(`❌ Groq ${model}: ${errMsg.substring(0, 80)}`);
       continue;
     }
   }
@@ -89,7 +92,7 @@ async function tryGroq(fullPrompt) {
 function getSmartFallback(userMessage) {
   const msg = userMessage.toLowerCase();
   
-  if (msg.includes('سلام') || msg.includes('خوبی') || msg.includes('خوشی') || msg.includes('قربان')) {
+  if (msg.includes('سلام') || msg.includes('خوبی') || msg.includes('خوشی') || msg.includes('قربان') || msg.includes('وقت بخیر')) {
     return 'سلام! 👋 خوش اومدید. من دستیار Pouyan.com هستم. چطور می‌تونم کمکتون کنم؟';
   }
   if (msg.includes('قیمت') || msg.includes('تعرفه') || msg.includes('هزینه') || msg.includes('چنده')) {
@@ -98,7 +101,7 @@ function getSmartFallback(userMessage) {
   if (msg.includes('پلن') || msg.includes('توضیح')) {
     return '📋 پلن‌های ما:\n💎 پلن ۱: تحویل قطعی (مالکیت کامل)\n🤝 پلن ۲: مشارکتی (رشد مشترک)\n🚀 پلن ۳: بدون پیش‌پرداخت\n\nهر کدوم رو توضیح بدم؟';
   }
-  if (msg.includes('سفارش') || msg.includes('ثبت') || msg.includes('شروع') || msg.includes('می‌خوام')) {
+  if (msg.includes('سفارش') || msg.includes('ثبت') || msg.includes('شروع') || msg.includes('می‌خوام') || msg.includes('میخوام')) {
     return '🛒 عالیه! برای ثبت سفارش لطفاً این اطلاعات رو بفرستید:\n۱. نام و نام خانوادگی\n۲. شماره تماس\n۳. نام کسب‌وکار\n۴. پلن مورد نظر';
   }
   if (msg.includes('تماس') || msg.includes('تلفن') || msg.includes('شماره')) {
@@ -109,6 +112,9 @@ function getSmartFallback(userMessage) {
   }
   if (msg.includes('بله') || msg.includes('آره') || msg.includes('درسته')) {
     return 'عالیه! ✅ لطفاً اطلاعاتت رو بفرست تا ثبت کنم.';
+  }
+  if (msg.includes('طراحی') || msg.includes('سایت') || msg.includes('وبسایت')) {
+    return '🌐 ما سایت‌های اختصاصی و حرفه‌ای می‌سازیم:\n✔️ طراحی اختصاصی (بدون قالب)\n✔️ نسخه موبایل\n✔️ درگاه پرداخت\n✔️ سئو\n\nپلن‌ها:\n💎 ۱۷.۹ میلیون (تحویل قطعی)\n🤝 ۹.۹ میلیون + ۷٪ فروش\n🚀 رایگان + ۱۷٪ فروش';
   }
   
   return 'سلام! 👋 من دستیار هوشمند Pouyan.com هستم.\n\n🔹 قیمت طراحی سایت\n🔹 مشاهده پلن‌ها\n🔹 ثبت سفارش\n🔹 تماس با ما\n\nچطور می‌تونم کمکتون کنم؟';
@@ -122,7 +128,7 @@ async function generateResponse({ message, customerName, products, conversationH
 
 تو باید به فارسی پاسخ بدی.`;
 
-  // روش ۱: Groq (رایگان + سریع)
+  // روش ۱: Groq (mdl‌های جدید)
   let reply = await tryGroq(fullPrompt);
   if (reply) {
     return { text: reply, intent: 'general' };
